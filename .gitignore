@@ -1,0 +1,15 @@
+# build output
+*.o
+*.exe
+mesi_sim
+
+# generated at runtime
+run_log.txt
+transcript.txt
+
+# editor / OS noise
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
