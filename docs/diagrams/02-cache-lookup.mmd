@@ -1,0 +1,29 @@
+flowchart LR
+    ADDR["address<br/>0x001040"]:::addr
+
+    ADDR --> TAG["tag<br/>5 bits<br/>0x00"]:::field
+    ADDR --> IDX["index<br/>9 bits<br/>65"]:::field
+    ADDR --> OFF["offset<br/>6 bits<br/>0"]:::field
+
+    IDX --> SET["select set 65<br/>of 512"]:::sel
+
+    SET --> W0["way 0<br/>tag, MESI state, 64 B data"]:::way
+    SET --> W1["way 1<br/>tag, MESI state, 64 B data"]:::way
+
+    W0 --> CMP{"tag match<br/>AND state is not I?"}:::cmp
+    W1 --> CMP
+    TAG --> CMP
+
+    CMP -->|yes| HIT["HIT<br/>1 cycle, no bus"]:::hit
+    CMP -->|no| MISS["MISS<br/>pick LRU victim,<br/>issue BusRd or BusRdX"]:::miss
+
+    OFF --> SELW["select 1 of 16 words<br/>inside the block"]:::sel
+    HIT --> SELW
+
+    classDef addr fill:#1f3a5f,stroke:#5b9bd5,stroke-width:2px,color:#ffffff
+    classDef field fill:#27462a,stroke:#6aaa64,stroke-width:2px,color:#ffffff
+    classDef sel fill:#333333,stroke:#999999,stroke-width:2px,color:#ffffff
+    classDef way fill:#4a2748,stroke:#b06ab0,stroke-width:2px,color:#ffffff
+    classDef cmp fill:#6b4415,stroke:#d4941e,stroke-width:2px,color:#ffffff
+    classDef hit fill:#1f4d2b,stroke:#4caf50,stroke-width:2px,color:#ffffff
+    classDef miss fill:#5c1f1f,stroke:#e57373,stroke-width:2px,color:#ffffff

@@ -114,6 +114,53 @@ interesting part: it's how you create real bus contention by hand.
 
 ## The machine
 
+```mermaid
+flowchart TB
+    P0["CPU 0"]:::cpu
+    P1["CPU 1"]:::cpu
+    P2["CPU 2"]:::cpu
+    P3["CPU 3"]:::cpu
+
+    C0["L1 cache 0<br/>64 KB, 2-way<br/>MESI + snoop unit"]:::cache
+    C1["L1 cache 1<br/>64 KB, 2-way<br/>MESI + snoop unit"]:::cache
+    C2["L1 cache 2<br/>64 KB, 2-way<br/>MESI + snoop unit"]:::cache
+    C3["L1 cache 3<br/>64 KB, 2-way<br/>MESI + snoop unit"]:::cache
+
+    P0 -->|"Rd / Wr"| C0
+    P1 -->|"Rd / Wr"| C1
+    P2 -->|"Rd / Wr"| C2
+    P3 -->|"Rd / Wr"| C3
+
+    ARB["Bus Arbiter<br/>round robin, rr_ptr"]:::arb
+
+    C0 -.->|BREQ0| ARB
+    C1 -.->|BREQ1| ARB
+    C2 -.->|BREQ2| ARB
+    C3 -.->|BREQ3| ARB
+
+    BUS["shared MemBus<br/>ADDR 20 bits, CMD, DATA 64 B, SHARED wired-OR"]:::bus
+
+    ARB -.->|"BGNT, one winner at a time"| BUS
+
+    C0 <--> BUS
+    C1 <--> BUS
+    C2 <--> BUS
+    C3 <--> BUS
+
+    MEM[("Main Memory<br/>1 MB, 3-cycle access")]:::mem
+    BUS <--> MEM
+
+    classDef cpu fill:#1f3a5f,stroke:#5b9bd5,stroke-width:2px,color:#ffffff
+    classDef cache fill:#27462a,stroke:#6aaa64,stroke-width:2px,color:#ffffff
+    classDef bus fill:#6b4415,stroke:#d4941e,stroke-width:3px,color:#ffffff
+    classDef arb fill:#4a2748,stroke:#b06ab0,stroke-width:2px,color:#ffffff
+    classDef mem fill:#333333,stroke:#999999,stroke-width:2px,color:#ffffff
+```
+
+Solid arrows carry data, dotted arrows are the arbitration handshake. Every
+cache is wired to the bus both ways, because it is not only a master issuing
+its own transactions but also a snooper watching everyone else's.
+
 | parameter | value |
 |---|---|
 | processors | 4 |
@@ -134,6 +181,44 @@ Patterson, which is what the assignment specifies.
  |    tag    (5 bits)  |    index   (9 bits)  |   offset  (6 bits) |
  +---------------------+----------------------+--------------------+
 ```
+
+And this is the lookup path that breakdown drives:
+
+```mermaid
+flowchart LR
+    ADDR["address<br/>0x001040"]:::addr
+
+    ADDR --> TAG["tag<br/>5 bits<br/>0x00"]:::field
+    ADDR --> IDX["index<br/>9 bits<br/>65"]:::field
+    ADDR --> OFF["offset<br/>6 bits<br/>0"]:::field
+
+    IDX --> SET["select set 65<br/>of 512"]:::sel
+
+    SET --> W0["way 0<br/>tag, MESI state, 64 B data"]:::way
+    SET --> W1["way 1<br/>tag, MESI state, 64 B data"]:::way
+
+    W0 --> CMP{"tag match<br/>AND state is not I?"}:::cmp
+    W1 --> CMP
+    TAG --> CMP
+
+    CMP -->|yes| HIT["HIT<br/>1 cycle, no bus"]:::hit
+    CMP -->|no| MISS["MISS<br/>pick LRU victim,<br/>issue BusRd or BusRdX"]:::miss
+
+    OFF --> SELW["select 1 of 16 words<br/>inside the block"]:::sel
+    HIT --> SELW
+
+    classDef addr fill:#1f3a5f,stroke:#5b9bd5,stroke-width:2px,color:#ffffff
+    classDef field fill:#27462a,stroke:#6aaa64,stroke-width:2px,color:#ffffff
+    classDef sel fill:#333333,stroke:#999999,stroke-width:2px,color:#ffffff
+    classDef way fill:#4a2748,stroke:#b06ab0,stroke-width:2px,color:#ffffff
+    classDef cmp fill:#6b4415,stroke:#d4941e,stroke-width:2px,color:#ffffff
+    classDef hit fill:#1f4d2b,stroke:#4caf50,stroke-width:2px,color:#ffffff
+    classDef miss fill:#5c1f1f,stroke:#e57373,stroke-width:2px,color:#ffffff
+```
+
+The `state is not I` half of that comparison is the part people forget. A tag
+can match while the line sits in Invalid, which is a miss, but it also means
+the frame is already ours to reuse without evicting anything.
 
 Two addresses collide in the same set when they're 32 KB apart (64-byte block
 x 512 sets). I leaned on this when picking test addresses: `0x001040`,
@@ -195,6 +280,29 @@ and grants the first master with `BREQ` asserted. Right after granting master
 
 so whoever just won drops to lowest priority for the next round.
 
+```mermaid
+flowchart TD
+    IDLE["bus idle"]:::idle --> ANY{"any BREQ<br/>asserted?"}:::dec
+    ANY -->|no| IDLE
+    ANY -->|yes| SCAN["scan rr_ptr, rr_ptr+1,<br/>rr_ptr+2, rr_ptr+3 (mod 4)"]:::step
+    SCAN --> GRANT["grant the first requester found<br/>drive BGNT, 1 cycle"]:::grant
+    GRANT --> HOLD["winner holds the bus for the<br/>WHOLE transaction<br/>address, then snoop, then data"]:::hold
+    HOLD --> ROT["rr_ptr becomes winner + 1<br/>winner drops to lowest priority"]:::rot
+    ROT --> ANY
+
+    LOSE["losers keep BREQ asserted<br/>and re-arbitrate next round"]:::lose
+    GRANT -.-> LOSE
+    LOSE -.-> ANY
+
+    classDef idle fill:#333333,stroke:#999999,stroke-width:2px,color:#ffffff
+    classDef dec fill:#6b4415,stroke:#d4941e,stroke-width:2px,color:#ffffff
+    classDef step fill:#1f3a5f,stroke:#5b9bd5,stroke-width:2px,color:#ffffff
+    classDef grant fill:#1f4d2b,stroke:#4caf50,stroke-width:2px,color:#ffffff
+    classDef hold fill:#4a2748,stroke:#b06ab0,stroke-width:2px,color:#ffffff
+    classDef rot fill:#27462a,stroke:#6aaa64,stroke-width:2px,color:#ffffff
+    classDef lose fill:#5c1f1f,stroke:#e57373,stroke-width:2px,color:#ffffff
+```
+
 I picked round robin over fixed priority for one concrete reason: with fixed
 priority, P0 in a tight loop can starve P3 forever. With rotating priority any
 requester can be passed over at most 3 times before it has to win, so the
@@ -234,6 +342,32 @@ request time. The change gets logged and flagged on the dashboard as
 "re-planned after losing arbitration". Test vector 23 forces it to happen
 deterministically.
 
+This is the full path a step takes, re-plan included:
+
+```mermaid
+flowchart LR
+    START["1 to 4 requests<br/>arrive same cycle"]:::start
+    START --> TAG["all caches tag-lookup<br/>in parallel, 1 cyc"]:::step
+    TAG --> HIT{"hit?"}:::dec
+    HIT -->|yes| DONE["done, no bus<br/>1 cycle total"]:::good
+    HIT -->|no| BREQ["assert BREQ,<br/>record planned cmd"]:::step
+    BREQ --> GRANT["arbiter grants<br/>one master, 1 cyc"]:::grant
+    GRANT --> CHECK{"state changed<br/>while waiting?"}:::dec
+    CHECK -->|"S became I"| REPLAN["RE-PLAN<br/>BusUpgr to BusRdX"]:::warn
+    CHECK -->|no| TXN
+    REPLAN --> TXN["run transaction<br/>evict, addr, snoop,<br/>data, fill"]:::step
+    TXN --> MORE{"BREQ still<br/>asserted?"}:::dec
+    MORE -->|yes| GRANT
+    MORE -->|no| END["step complete"]:::good
+
+    classDef start fill:#1f3a5f,stroke:#5b9bd5,stroke-width:2px,color:#ffffff
+    classDef step fill:#333333,stroke:#999999,stroke-width:2px,color:#ffffff
+    classDef dec fill:#6b4415,stroke:#d4941e,stroke-width:2px,color:#ffffff
+    classDef grant fill:#4a2748,stroke:#b06ab0,stroke-width:2px,color:#ffffff
+    classDef warn fill:#5c1f1f,stroke:#e57373,stroke-width:3px,color:#ffffff
+    classDef good fill:#1f4d2b,stroke:#4caf50,stroke-width:2px,color:#ffffff
+```
+
 This was the one part of the protocol I got wrong on the first attempt, and
 it's the reason I built the concurrent-request mechanism in the first place.
 
@@ -259,6 +393,37 @@ Which produce these access latencies:
 | miss, memory supplies | cache + arb + bus + snoop + mem + bus + fill | 9 |
 | miss, another cache flushes | cache + arb + bus + snoop + cache + bus + fill | 7 |
 | dirty victim adds a write-back | bus + mem | +4 |
+
+Here is where those 7 cycles actually go on a read miss that another cache
+services. This is test vector 9, the P3 read that catches P1 dirty in M:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as P3 cache (requester, I)
+    participant A as Arbiter
+    participant B as MemBus
+    participant O as P1 cache (owner, M)
+    participant M as Main Memory
+
+    R->>R: tag lookup, miss in state I [1 cyc]
+    R->>A: assert BREQ
+    A->>R: BGNT, round robin winner [1 cyc]
+    R->>B: BusRd, address phase [1 cyc]
+    B->>O: snoop, every cache checks tags [1 cyc]
+    O->>B: pull SHARED, read block out [1 cyc]
+    B->>R: data phase, block delivered [1 cyc]
+    B-->>M: memory snarfs the same block [3 cyc, in parallel]
+    R->>R: fill line, I becomes S [1 cyc]
+
+    Note over O: P1 goes M to S
+    Note over M: memory is clean again
+    Note over R,M: 7 cycles to the requester
+```
+
+The dashed arrow is the part that makes this cheaper than going to memory.
+Those 3 memory cycles are real, but they are memory *occupancy*, not requester
+stall, so they never appear in the 7.
 
 Cache-to-cache transfer beats going to memory because memory snarfs the
 flushed block off the bus in parallel. Those 3 memory cycles are memory
@@ -306,6 +471,34 @@ checked against.
 
 ### Locally initiated accesses
 
+What this processor's own reads and writes do to its own line.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    [*] --> I
+
+    I --> E : PrRd / BusRd, SHARED=0
+    I --> S : PrRd / BusRd, SHARED=1
+    I --> M : PrWr / BusRdX
+
+    E --> M : PrWr, no bus
+    S --> M : PrWr / BusUpgr
+
+    E --> E : PrRd hit
+    S --> S : PrRd hit
+    M --> M : PrRd, PrWr hit
+
+    E --> I : Replace, silent
+    S --> I : Replace, silent
+    M --> I : Replace / BusWB
+```
+
+The one arc worth staring at is `E --> M`, because it is the only way into M
+that costs nothing. E exists purely so that arc can exist, and E is only
+reachable because the SHARED line told us nobody else had the block.
+
 | from | event | action | to |
 |---|---|---|---|
 | I | PrRd, `SHARED` low | issue `BusRd` | E |
@@ -322,6 +515,31 @@ checked against.
 | M | Replace | write the block back (`BusWB`) | I |
 
 ### Remotely initiated (snooped) accesses
+
+What a transaction issued by *somebody else* does to our line. We never asked
+for any of these.
+
+Every transition below is triggered by a transaction we snooped off the bus,
+not by anything our own processor did.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    M --> S : BusRd / Flush
+    E --> S : BusRd / SHARED
+    S --> S : BusRd / SHARED
+
+    M --> I : BusRdX / Flush
+    E --> I : BusRdX / inval
+    S --> I : BusRdX, BusUpgr / inval
+
+    I --> I : any snoop, no action
+```
+
+`Flush` appears on exactly the two arcs leaving M, and nowhere else. That is
+assumption 3 made visible: only a dirty owner ever puts data on the bus,
+because E and S copies are clean and memory can answer those itself.
 
 | from | snooped `BusRd` | | snooped `BusRdX` / `BusUpgr` | |
 |---|---|---|---|---|
@@ -471,6 +689,39 @@ scheme in Part 2.
 I deliberately kept the protocol and the presentation in separate files. You
 can read `sim.cpp` on its own and check it line by line against the lecture
 diagrams without any drawing code in the way.
+
+---
+
+## Diagrams
+
+The architecture diagrams above are Mermaid blocks, so GitHub renders them
+live and they stay diffable in version control. `docs/diagrams/` holds the
+same seven as PNGs plus their extracted `.mmd` sources, for pasting into a
+report where Mermaid won't render.
+
+| file | what it shows |
+|---|---|
+| `01-system-architecture` | the whole machine: CPUs, caches, arbiter, bus, memory |
+| `02-cache-lookup` | how an address becomes a hit or a miss |
+| `03-bus-arbiter` | the round-robin arbitration loop |
+| `04-step-flow` | one simulation step, including the re-plan path |
+| `05-read-miss-timeline` | where the 7 cycles of a cache-to-cache miss go |
+| `06-mesi-local` | locally initiated state diagram, 12 arcs |
+| `07-mesi-remote` | remotely initiated state diagram, 8 arcs |
+
+The PNGs are generated from the README, not maintained separately, so they
+can't drift out of sync. To rebuild them after editing a diagram:
+
+```
+npm install @mermaid-js/mermaid-cli
+mmdc -i docs/diagrams/06-mesi-local.mmd -o docs/diagrams/06-mesi-local.png -b white -s 2
+```
+
+A note on layout, since it cost me some time: Mermaid's auto-layout is fussy
+about long edge labels. Anything much over about 25 characters starts
+colliding with neighbouring arrows, and a tall `flowchart TD` with a loop in
+it can come out 3800 pixels high. Shortening labels and switching the step
+flow to `flowchart LR` took that one from 1246x3820 down to 1568x190.
 
 ---
 

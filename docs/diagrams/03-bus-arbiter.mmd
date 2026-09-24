@@ -1,0 +1,20 @@
+flowchart TD
+    IDLE["bus idle"]:::idle --> ANY{"any BREQ<br/>asserted?"}:::dec
+    ANY -->|no| IDLE
+    ANY -->|yes| SCAN["scan rr_ptr, rr_ptr+1,<br/>rr_ptr+2, rr_ptr+3 (mod 4)"]:::step
+    SCAN --> GRANT["grant the first requester found<br/>drive BGNT, 1 cycle"]:::grant
+    GRANT --> HOLD["winner holds the bus for the<br/>WHOLE transaction<br/>address, then snoop, then data"]:::hold
+    HOLD --> ROT["rr_ptr becomes winner + 1<br/>winner drops to lowest priority"]:::rot
+    ROT --> ANY
+
+    LOSE["losers keep BREQ asserted<br/>and re-arbitrate next round"]:::lose
+    GRANT -.-> LOSE
+    LOSE -.-> ANY
+
+    classDef idle fill:#333333,stroke:#999999,stroke-width:2px,color:#ffffff
+    classDef dec fill:#6b4415,stroke:#d4941e,stroke-width:2px,color:#ffffff
+    classDef step fill:#1f3a5f,stroke:#5b9bd5,stroke-width:2px,color:#ffffff
+    classDef grant fill:#1f4d2b,stroke:#4caf50,stroke-width:2px,color:#ffffff
+    classDef hold fill:#4a2748,stroke:#b06ab0,stroke-width:2px,color:#ffffff
+    classDef rot fill:#27462a,stroke:#6aaa64,stroke-width:2px,color:#ffffff
+    classDef lose fill:#5c1f1f,stroke:#e57373,stroke-width:2px,color:#ffffff

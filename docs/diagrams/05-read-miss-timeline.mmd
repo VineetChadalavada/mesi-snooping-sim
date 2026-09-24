@@ -1,0 +1,21 @@
+sequenceDiagram
+    autonumber
+    participant R as P3 cache (requester, I)
+    participant A as Arbiter
+    participant B as MemBus
+    participant O as P1 cache (owner, M)
+    participant M as Main Memory
+
+    R->>R: tag lookup, miss in state I [1 cyc]
+    R->>A: assert BREQ
+    A->>R: BGNT, round robin winner [1 cyc]
+    R->>B: BusRd, address phase [1 cyc]
+    B->>O: snoop, every cache checks tags [1 cyc]
+    O->>B: pull SHARED, read block out [1 cyc]
+    B->>R: data phase, block delivered [1 cyc]
+    B-->>M: memory snarfs the same block [3 cyc, in parallel]
+    R->>R: fill line, I becomes S [1 cyc]
+
+    Note over O: P1 goes M to S
+    Note over M: memory is clean again
+    Note over R,M: 7 cycles to the requester

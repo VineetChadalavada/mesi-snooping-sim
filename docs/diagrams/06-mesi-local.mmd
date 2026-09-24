@@ -1,0 +1,19 @@
+stateDiagram-v2
+    direction LR
+
+    [*] --> I
+
+    I --> E : PrRd / BusRd, SHARED=0
+    I --> S : PrRd / BusRd, SHARED=1
+    I --> M : PrWr / BusRdX
+
+    E --> M : PrWr, no bus
+    S --> M : PrWr / BusUpgr
+
+    E --> E : PrRd hit
+    S --> S : PrRd hit
+    M --> M : PrRd, PrWr hit
+
+    E --> I : Replace, silent
+    S --> I : Replace, silent
+    M --> I : Replace / BusWB

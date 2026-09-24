@@ -1,0 +1,40 @@
+flowchart TB
+    P0["CPU 0"]:::cpu
+    P1["CPU 1"]:::cpu
+    P2["CPU 2"]:::cpu
+    P3["CPU 3"]:::cpu
+
+    C0["L1 cache 0<br/>64 KB, 2-way<br/>MESI + snoop unit"]:::cache
+    C1["L1 cache 1<br/>64 KB, 2-way<br/>MESI + snoop unit"]:::cache
+    C2["L1 cache 2<br/>64 KB, 2-way<br/>MESI + snoop unit"]:::cache
+    C3["L1 cache 3<br/>64 KB, 2-way<br/>MESI + snoop unit"]:::cache
+
+    P0 -->|"Rd / Wr"| C0
+    P1 -->|"Rd / Wr"| C1
+    P2 -->|"Rd / Wr"| C2
+    P3 -->|"Rd / Wr"| C3
+
+    ARB["Bus Arbiter<br/>round robin, rr_ptr"]:::arb
+
+    C0 -.->|BREQ0| ARB
+    C1 -.->|BREQ1| ARB
+    C2 -.->|BREQ2| ARB
+    C3 -.->|BREQ3| ARB
+
+    BUS["shared MemBus<br/>ADDR 20 bits, CMD, DATA 64 B, SHARED wired-OR"]:::bus
+
+    ARB -.->|"BGNT, one winner at a time"| BUS
+
+    C0 <--> BUS
+    C1 <--> BUS
+    C2 <--> BUS
+    C3 <--> BUS
+
+    MEM[("Main Memory<br/>1 MB, 3-cycle access")]:::mem
+    BUS <--> MEM
+
+    classDef cpu fill:#1f3a5f,stroke:#5b9bd5,stroke-width:2px,color:#ffffff
+    classDef cache fill:#27462a,stroke:#6aaa64,stroke-width:2px,color:#ffffff
+    classDef bus fill:#6b4415,stroke:#d4941e,stroke-width:3px,color:#ffffff
+    classDef arb fill:#4a2748,stroke:#b06ab0,stroke-width:2px,color:#ffffff
+    classDef mem fill:#333333,stroke:#999999,stroke-width:2px,color:#ffffff

@@ -1,0 +1,12 @@
+stateDiagram-v2
+    direction LR
+
+    M --> S : BusRd / Flush
+    E --> S : BusRd / SHARED
+    S --> S : BusRd / SHARED
+
+    M --> I : BusRdX / Flush
+    E --> I : BusRdX / inval
+    S --> I : BusRdX, BusUpgr / inval
+
+    I --> I : any snoop, no action

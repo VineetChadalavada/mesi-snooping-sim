@@ -1,0 +1,21 @@
+flowchart LR
+    START["1 to 4 requests<br/>arrive same cycle"]:::start
+    START --> TAG["all caches tag-lookup<br/>in parallel, 1 cyc"]:::step
+    TAG --> HIT{"hit?"}:::dec
+    HIT -->|yes| DONE["done, no bus<br/>1 cycle total"]:::good
+    HIT -->|no| BREQ["assert BREQ,<br/>record planned cmd"]:::step
+    BREQ --> GRANT["arbiter grants<br/>one master, 1 cyc"]:::grant
+    GRANT --> CHECK{"state changed<br/>while waiting?"}:::dec
+    CHECK -->|"S became I"| REPLAN["RE-PLAN<br/>BusUpgr to BusRdX"]:::warn
+    CHECK -->|no| TXN
+    REPLAN --> TXN["run transaction<br/>evict, addr, snoop,<br/>data, fill"]:::step
+    TXN --> MORE{"BREQ still<br/>asserted?"}:::dec
+    MORE -->|yes| GRANT
+    MORE -->|no| END["step complete"]:::good
+
+    classDef start fill:#1f3a5f,stroke:#5b9bd5,stroke-width:2px,color:#ffffff
+    classDef step fill:#333333,stroke:#999999,stroke-width:2px,color:#ffffff
+    classDef dec fill:#6b4415,stroke:#d4941e,stroke-width:2px,color:#ffffff
+    classDef grant fill:#4a2748,stroke:#b06ab0,stroke-width:2px,color:#ffffff
+    classDef warn fill:#5c1f1f,stroke:#e57373,stroke-width:3px,color:#ffffff
+    classDef good fill:#1f4d2b,stroke:#4caf50,stroke-width:2px,color:#ffffff
